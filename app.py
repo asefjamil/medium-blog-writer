@@ -97,9 +97,9 @@ for line in blog_text.split('\n'):
         else:
             blog_elements.append(Paragraph(clean_line, body_style))
 
-doc.build(blog_elements)
-return buffer
-
+    doc.build(blog_elements)
+    buffer.seek(0)
+    return buffer
 # --- STEP 3: UI ---
 
 st.title("📝 1-Click Medium Blog Generator")
