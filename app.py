@@ -98,7 +98,7 @@ for line in blog_text.split('\n'):
             blog_elements.append(Paragraph(clean_line, body_style))
 
 doc.build(blog_elements)
-    return buffer
+return buffer
 
 # --- STEP 3: UI ---
 
