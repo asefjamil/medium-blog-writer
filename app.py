@@ -85,7 +85,7 @@ def save_blog_to_pdf(blog_text, topic):
     body_style = ParagraphStyle('body', parent=styles['Normal'], fontSize=12, spaceAfter=8)
 
     blog_elements = [Paragraph(topic.strip(), title_style)]
-    for line in blog_text.split('
+for line in blog_text.split('\n'):
 '):
         clean_line = re.sub(r'[\*_#`>]+', '', line).strip()
         if not clean_line:
