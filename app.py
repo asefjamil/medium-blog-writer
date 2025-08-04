@@ -1,39 +1,46 @@
-# ✅ Final Streamlit App: Prompt Generator with Fallback
+# ✅ 1-Click Medium Blog Generator (Streamlit version)
 
 import streamlit as st
-import requests
 import re
+import requests
 from io import BytesIO
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
+from google import generativeai as genai
 
-# --- CONFIGURATION ---
+# ✅ Load API Keys from secrets
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-OPENROUTER_API_KEY = st.secrets["API_OR"]
-OPENROUTER_V3_FREE_KEY = st.secrets["v3_free"]
+OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
 
-# --- HELPER FUNCTIONS ---
-def generate_prompt(topic, context):
+# ✅ Configure Gemini
+genai.configure(api_key=GEMINI_API_KEY)
+
+st.set_page_config(page_title="1-Click Medium Blog", layout="centered")
+st.title("📝 1-Click Medium Blog Generator")
+
+# ✅ Inputs
+with st.form("blog_form"):
+    topic = st.text_input("Enter your blog topic")
+    context = st.text_area("Optional context or angle for the blog")
+    submitted = st.form_submit_button("Generate Blog")
+
+if submitted and topic.strip():
     user_prompt = f"Generate a creative and detailed blog prompt for the topic: '{topic}'. Context: {context}"
-    try:
-        from google import generativeai as genai
-        genai.configure(api_key=GEMINI_API_KEY)
-        gemini_model = genai.GenerativeModel("gemini-1.5-flash")
-        response = gemini_model.generate_content(user_prompt)
-        output = response.text.strip()
-        if len(output) >= 30:
-            st.success("✅ Prompt generated using Gemini.")
-            return output
-        else:
-            st.warning("⚠️ Gemini too short. Falling back to DeepSeek V3...")
-    except:
-        st.warning("⚠️ Gemini failed. Falling back to DeepSeek V3...")
 
+    # STEP 1: Generate Blog Prompt using Gemini → fallback: Atlas
     try:
+        gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+        prompt_response = gemini_model.generate_content(user_prompt)
+        prompt_text = prompt_response.text.strip()
+        if len(prompt_text) < 30:
+            raise ValueError("Prompt too short")
+        st.success("✅ Prompt generated using Gemini")
+    except:
+        st.warning("⚠️ Gemini failed, using DeepSeek Atlas as fallback")
         headers = {
-            "Authorization": f"Bearer {OPENROUTER_V3_FREE_KEY}",
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json"
         }
         data = {
@@ -44,58 +51,44 @@ def generate_prompt(topic, context):
             ]
         }
         response = requests.post("https://openrouter.ai/api/v1/chat/completions", json=data, headers=headers)
-        if response.status_code == 200:
-            st.success("✅ Prompt generated using fallback DeepSeek V3.")
-            return response.json()['choices'][0]['message']['content'].strip()
-        else:
-            st.error(f"❌ Fallback failed. Status code: {response.status_code}")
-            return ""
-    except:
-        st.error("❌ Prompt generation failed.")
-        return ""
+        prompt_text = response.json()['choices'][0]['message']['content'].strip()
+        st.success("✅ Prompt generated using DeepSeek Atlas")
 
-def generate_blog_from_prompt(topic, prompt_text):
-    system_msg = f"You are a professional blog writer. Write a complete Medium-style, SEO-optimized blog on the topic: '{topic}'. Start the blog with a centered title. Each numbered section (e.g., 1. Introduction) must be followed by a well-developed paragraph. Use bullet points (-) only if clearly required as subpoints. Do not use markdown or symbols like **, ##, --, etc."
+    st.markdown("---")
+    st.markdown("**🧠 Finalized Prompt:**")
+    st.code(prompt_text)
 
-    headers_chutes = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    headers_fallback = {
-        "Authorization": f"Bearer {OPENROUTER_V3_FREE_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    data = {
-        "model": "deepseek/deepseek-chat-v3-0324",
-        "messages": [
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": prompt_text}
-        ]
-    }
+    # STEP 2: Generate Blog using Gemini → fallback: Chutes
+    system_msg = f"""You are a professional blog writer. Write a detailed, structured, and SEO-optimized blog on the topic: '{topic}'.
+- Begin with a centered blog title (just the title).
+- Use numbered section headers (e.g., 1. Introduction).
+- Under each section, write one or more detailed paragraphs.
+- Use bullet points (-) only if the section clearly needs a list.
+- Do NOT use markdown (e.g., ###, **, ##, --).
+- Ensure the writing is clean, human-readable, and print-friendly."""
 
     try:
-        response = requests.post("https://openrouter.ai/api/v1/chat/completions", json=data, headers=headers_chutes)
-        if response.status_code == 200:
-            st.success("✅ Blog generated using DeepSeek V3 (Chutes).")
-            return response.json()['choices'][0]['message']['content'].strip()
-        else:
-            st.warning("⚠️ Chutes failed. Trying fallback...")
-            response = requests.post("https://openrouter.ai/api/v1/chat/completions", json=data, headers=headers_fallback)
-            if response.status_code == 200:
-                st.success("✅ Blog generated using fallback DeepSeek V3.")
-                return response.json()['choices'][0]['message']['content'].strip()
-            else:
-                st.error(f"❌ Fallback failed. Status code: {response.status_code}")
-                return ""
+        blog_response = gemini_model.generate_content(f"{system_msg}\n\nPrompt:\n{prompt_text}")
+        blog_text = blog_response.text.strip()
+        if len(blog_text) < 100:
+            raise ValueError("Blog too short")
+        st.success("✅ Blog generated using Gemini")
     except:
-        st.error("❌ Blog generation failed.")
-        return ""
+        st.warning("⚠️ Gemini failed, using DeepSeek Chutes as fallback")
+        data = {
+            "model": "deepseek/deepseek-chat-v3-0324",
+            "messages": [
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": prompt_text}
+            ]
+        }
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", json=data, headers=headers)
+        blog_text = response.json()['choices'][0]['message']['content'].strip()
+        st.success("✅ Blog generated using DeepSeek Chutes")
 
-def save_blog_to_pdf(blog_text, topic):
+    # STEP 3: Generate PDF in memory
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=60, bottomMargin=40)
-
     styles = getSampleStyleSheet()
     blog_elements = []
 
@@ -107,7 +100,7 @@ def save_blog_to_pdf(blog_text, topic):
 
     for line in blog_text.split('\n'):
         clean_line = re.sub(r'[\*_#`>]+', '', line).strip()
-        if not clean_line:
+        if not clean_line or re.match(r'^-+$', clean_line):
             blog_elements.append(Spacer(1, 0.2 * inch))
             continue
         if re.match(r'^\d+\.\s', clean_line):
@@ -119,30 +112,11 @@ def save_blog_to_pdf(blog_text, topic):
 
     doc.build(blog_elements)
     buffer.seek(0)
-    return buffer
 
-# --- UI ---
-
-st.title("📝 1-Click Medium Blog Generator")
-
-topic = st.text_input("Enter blog topic")
-context = st.text_area("Enter context (1–2 lines)", height=80)
-
-if st.button("Generate Prompt"):
-    with st.spinner("⏳ Generating..."):
-        prompt = generate_prompt(topic, context)
-        st.session_state["prompt"] = prompt
-
-if "prompt" in st.session_state:
-    st.subheader("Generated Prompt")
-    st.write(st.session_state["prompt"])
-    if st.button("Generate Blog from Prompt"):
-        with st.spinner("⏳ Writing blog..."):
-            blog = generate_blog_from_prompt(topic, st.session_state["prompt"])
-            st.session_state["blog"] = blog
-
-if "blog" in st.session_state:
-    st.subheader("Generated Blog")
-    st.write(st.session_state["blog"])
-    pdf_buffer = save_blog_to_pdf(st.session_state["blog"], topic)
-    st.download_button("📄 Download Blog as PDF", data=pdf_buffer, file_name=f"{topic}.pdf", mime="application/pdf")
+    st.markdown("---")
+    st.download_button(
+        label="📥 Download Your Blog as PDF",
+        data=buffer,
+        file_name=f"blog_for_{re.sub(r'[^a-zA-Z0-9]+', '_', topic.lower())}.pdf",
+        mime="application/pdf"
+    )
